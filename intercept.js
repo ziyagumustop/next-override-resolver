@@ -1,52 +1,51 @@
-const VeniaUiResolverPlugin = require('./lib/VeniaUiResolverPlugin');
+const NextjsResolverPlugin = require('./lib/NextjsResolverPlugin');
 const path = require('path');
-const {cachedCleverMerge} = require('webpack/lib/util/cleverMerge');
+
+// GraphCommerce için varsayılan override paketleri
+const defaultPackages = [
+    '@graphcommerce/next-ui',
+    '@graphcommerce/magento-cart',
+    '@graphcommerce/magento-product'
+];
 
 const packagesToOverride = process.env.FOOMAN_OVERRIDEPACKAGES
     ? process.env.FOOMAN_OVERRIDEPACKAGES.split(',')
-    : ['@magento/venia-ui/lib' , '@magento/peregrine/lib'];
+    : defaultPackages;
 
 let resolverPlugins = [];
 
-packagesToOverride.forEach(function(package) {
-    const parts = package.split('/');
-    const namespace = parts[0];
-    const packagename = parts[1];
-    const mainFolder = parts[2];
-    const pluginName = 'fooman/' + packagename + '-override-resolver';
-    const destinationDir = path.resolve(__dirname, '..', '..', '..', 'src', 'overrides', packagename);
-    const sourceDir = path.resolve(__dirname, '..', '..', '..', 'node_modules', namespace, packagename, mainFolder);
+packagesToOverride.forEach(function (package) {
+    const pluginName = `fooman/${package}-override-resolver`;
+    // Override dosyalarının konumu
+    const destinationDir = path.resolve(process.cwd(), 'src/overrides', package.replace('@graphcommerce/', ''));
+    // Orijinal modül konumu
+    const sourceDir = path.resolve(process.cwd(), 'node_modules', package);
 
-    const myResolverPlugin = new VeniaUiResolverPlugin({
+    const resolverPlugin = new NextjsResolverPlugin({
         name: pluginName,
         projectPath: destinationDir,
-        veniaUiModulePath: sourceDir
+        nextjsModulePath: sourceDir
     });
-    resolverPlugins.push(myResolverPlugin);
+    resolverPlugins.push(resolverPlugin);
 });
 
-module.exports = targets => {
-    const webpackCompiler = targets.of('@magento/pwa-buildpack').webpackCompiler;
-    webpackCompiler.tap(compiler =>
-        compiler.resolverFactory.hooks.resolveOptions
-            .for('normal')
-            .tap('AddVeniaResolverToWebpackConfig', resolveOptions => {
-                const plugin = Object.assign(
-                    {
-                        plugins: resolverPlugins
-                    });
-                return cachedCleverMerge(plugin, resolveOptions);
-            })
-    );
-    webpackCompiler.tap(compiler =>
-        compiler.resolverFactory.hooks.resolveOptions
-            .for('context')
-            .tap('AddVeniaResolverToWebpackConfig', resolveOptions => {
-                const plugin = Object.assign(
-                    {
-                        plugins: resolverPlugins
-                    });
-                return cachedCleverMerge(plugin, resolveOptions);
-            })
-    );
+// Next.js webpack konfigürasyonu için export
+module.exports = (nextConfig = {}) => {
+    return {
+        ...nextConfig,
+        webpack: (config, options) => {
+            // Mevcut webpack konfigürasyonuna resolver pluginleri ekliyoruz
+            config.resolve.plugins = [
+                ...(config.resolve.plugins || []),
+                ...resolverPlugins
+            ];
+
+            // Kullanıcının kendi webpack konfigürasyonu varsa çalıştırıyoruz
+            if (typeof nextConfig.webpack === 'function') {
+                return nextConfig.webpack(config, options);
+            }
+
+            return config;
+        }
+    };
 };
